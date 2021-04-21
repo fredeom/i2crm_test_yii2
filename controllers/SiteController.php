@@ -18,7 +18,7 @@ class SiteController extends Controller {
       $githubOAthCode = Yii::$app->request->get('code');
       if ($githubOAthCode) {
         $sURL = 'https://github.com/login/oauth/access_token';
-        $sPD = 'client_id=f990cde9b9cd9c0514e8&client_secret=dd3facd8f3cbb1b24331a60e2ea039e0f4c38b8b&code=' . $githubOAthCode;
+        $sPD = 'client_id=' . Yii::$app->params['client_id'] . '&client_secret=' . Yii::$app->params['client_secret'] . '&code=' . $githubOAthCode;
         $aHTTP = [
           'http' => [
             'method'  => 'POST',
