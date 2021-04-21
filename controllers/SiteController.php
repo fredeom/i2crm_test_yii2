@@ -34,10 +34,20 @@ class SiteController extends Controller {
         return $this->redirect('/?token=' . $token);
       }
       $token = Yii::$app->request->get('token');
-      $userList = explode(' ', '' . Yii::$app->request->post('userList'));
+
+      $userListStr = Yii::$app->request->post('userList');
+      $userList = explode(' ', '' . $userListStr);
+
+      $userListLink = Yii::$app->request->post('userListLink');
+      $userListFromLink = @file_get_contents($userListLink);
+      $userListFromLink = !$userListFromLink ? [] : explode(' ', $userListFromLink);
+      $users = array_unique(array_merge($userList, $userListFromLink));
+
+      $userListStr = trim(implode(' ', $users));
+
       $refresh = Yii::$app->request->post('refresh');
       $repos = [];
-      if ($refresh) {
+      if ($refresh && !Yii::$app->cache->get($userListStr)) {
         $nodes = [];
         $results = [];
         foreach ($userList as $user) {
@@ -80,13 +90,13 @@ class SiteController extends Controller {
         }
         usort($repos, fn($a, $b) => strcmp($b['updated_at'], $a['updated_at']));
         $repos = array_slice($repos, 0, 10);
+        Yii::$app->cache->set($userListStr, $repos, 10 * 60);
+      } else {
+        $repos = Yii::$app->cache->get($userListStr);
+        if (!$repos) $repos = [];
       }
-      $userListLink = Yii::$app->request->post('userListLink');
-      $userListFromLink = @file_get_contents($userListLink);
-      $userListFromLink = !$userListFromLink ? [] : explode(' ', $userListFromLink);
-      $users = array_unique(array_merge($userList, $userListFromLink));
       return $this->render('index', [
-          'userList' => trim(implode(' ', $users)),
+          'userList' => $userListStr,
           'repos' => $repos,
           'token' => $token,
           'refresh' => $refresh
