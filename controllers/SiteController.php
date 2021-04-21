@@ -13,7 +13,7 @@ use app\models\ContactForm;
 class SiteController extends Controller {
     public function actionIndex() {
       if (Yii::$app->request->post('authorize')) {
-        return $this->redirect('https://github.com/login/oauth/authorize?client_id=f990cde9b9cd9c0514e8');
+        return $this->redirect('https://github.com/login/oauth/authorize?client_id=' . Yii::$app->params['client_id']);
       }
       $githubOAthCode = Yii::$app->request->get('code');
       if ($githubOAthCode) {
