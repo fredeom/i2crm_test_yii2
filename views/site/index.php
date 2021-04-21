@@ -72,9 +72,9 @@ $this->title = 'My Yii Application';
                     <?php
                       foreach ($repos as $repo) {
                         echo '<tr>
-                                <td>' . $repo['name']. '</td>
-                                <td>' . $repo['updated_at']. '</td>
-                                <td><a href="' . $repo['html_url'] . '">' . $repo['html_url'] . '</a></td>
+                                <td>' . \yii\helpers\Html::encode($repo['name']) . '</td>
+                                <td>' . \yii\helpers\Html::encode($repo['updated_at']). '</td>
+                                <td><a href="' . \yii\helpers\Html::encode($repo['html_url']) . '">' . \yii\helpers\Html::encode($repo['html_url']) . '</a></td>
                               </tr>';
                       }
                     ?>
