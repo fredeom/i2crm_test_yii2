@@ -35,7 +35,6 @@ class SiteController extends Controller {
     }
 
     private function getUserListFromLink($userListLink) {
-        $userListFromLink = [];
         if (!empty($userListLink)) {
             $client = new Client();
             $response = $client->createRequest()
@@ -98,8 +97,7 @@ class SiteController extends Controller {
             }
         }
         usort($info, fn($a, $b) => strcmp($b['updated_at'], $a['updated_at']));
-        $info = array_slice($info, 0, 10);
-        return $info;
+        return array_slice($info, 0, 10);
     }
 
     public function actionIndex() {
@@ -141,16 +139,5 @@ class SiteController extends Controller {
             'token' => $token,
             'refresh' => $refresh
         ]);
-    }
-
-    public function actionTest()
-    {
-        Yii::$app->async->run(function() {
-           return 123;
-        });
-
-        $some = Yii::$app->async->wait();
-
-        return $some[0];
     }
 }
