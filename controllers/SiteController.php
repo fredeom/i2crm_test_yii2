@@ -3,118 +3,154 @@
 namespace app\controllers;
 
 use Yii;
-use yii\filters\AccessControl;
+use yii\httpclient\Client;
 use yii\web\Controller;
-use yii\web\Response;
-use yii\filters\VerbFilter;
 use app\models\LoginForm;
 use app\models\ContactForm;
 
 class SiteController extends Controller {
 
     private function redirectAfterGithubOAuthorization($githubOAthCode) {
-      $sURL = Yii::$app->params['github_api_oauth_access_token_url'];
-      $sPD = 'client_id=' . Yii::$app->params['github_api_client_id'] . '&client_secret=' . Yii::$app->params['github_api_client_secret'] . '&code=' . $githubOAthCode;
-      $aHTTP = [
-        'http' => [
-          'method'  => 'POST',
-          'header'  => 'Content-type: application/x-www-form-urlencoded',
-          'content' => $sPD
-        ]
-      ];
-      $context = stream_context_create($aHTTP);
-      $tokenString = file_get_contents($sURL, false, $context);
-      $tokenStringArr = explode('&', $tokenString);
-      $tokenArr = explode('=', $tokenStringArr[0]);
-      $token = $tokenArr[1];
-      return $this->redirect('/?token=' . $token);
+        $sURL = Yii::$app->params['github_api_oauth_access_token_url'];
+        $client = new Client();
+        $response = $client->createRequest()
+            ->setMethod('POST')
+            ->setUrl($sURL)
+            ->setData([
+                'client_id' => Yii::$app->params['github_api_client_id'],
+                'client_secret' => Yii::$app->params['github_api_client_secret'],
+                'code' => $githubOAthCode])
+            ->send();
+        if ($response->isOk) {
+            if (isset($response->data['error'])) {
+                Yii::$app->session->addFlash('error', 'Cant OAuthorize with github. ' . $response->data['error_description'] . ' See <a href="' . $response->data['error_uri']. '">this</a>.');
+            } else {
+                Yii::$app->session->addFlash('success', 'Github OAuthtorization succeeded');
+                return $this->redirect(['/', 'token' => $response->data['access_token']]);
+            }
+        } else {
+            Yii::$app->session->addFlash('error', 'Cant connect to github server');
+        }
+        return $this->redirect('/');
     }
 
     private function getUserListFromLink($userListLink) {
-      $userListFromLink = [];
-      if ($userListLink) {
-        $userListFromLink = @file_get_contents($userListLink);
-        $userListFromLink = !$userListFromLink ? [] : explode(' ', $userListFromLink);
-      }
-      return $userListFromLink;
+        $userListFromLink = [];
+        if (!empty($userListLink)) {
+            $client = new Client();
+            $response = $client->createRequest()
+                ->setMethod('GET')
+                ->setUrl($userListLink)
+                ->send();
+            if ($response->isOk) {
+                $userListFromLink = $response->getContent();
+                $userListFromLink = empty($userListFromLink) ? [] : explode(' ', $userListFromLink);
+                Yii::$app->session->addFlash('success', 'Repos from <a href="' . $userListLink . '">' . $userListLink . '</a> added');
+                return $userListFromLink;
+            } else {
+                Yii::$app->session->addFlash('error', 'Failed to connect to ' . $userListLink);
+            }
+        } else {
+            Yii::$app->session->addFlash('error', 'Empty url specified');
+            return [];
+        }
     }
 
-    private function downloadReposInfo($userListStr) {
-      $users = explode(' ', $userListStr);
-      $nodes = [];
-      $results = [];
-      foreach ($users as $user) {
-        if ($user) {
-          $nodes[] = Yii::$app->params['github_api_users_url'] . $user . '/repos';
+    private function downloadReposInfo($userListStr, $token)
+    {
+        $users = explode(' ', $userListStr);
+        foreach ($users as $user) {
+            if (empty(Yii::$app->cache->get($user))) {
+                Yii::$app->async->run(function() use ($user, $token) {
+                    $client = new Client([
+                        'responseConfig' => [
+                            'format' => Client::FORMAT_JSON
+                        ],
+                    ]);
+                    $request = $client->createRequest()
+                        ->setMethod('GET')
+                        ->addHeaders(['user-agent' => 'Yii http client'])
+                        ->setUrl(Yii::$app->params['github_api_users_url'] . $user . '/repos');
+                    if (!empty($token)) {
+                        $request->getHeaders()->add('Authorization', 'token ' . $token . '123');
+                    }
+                    $response = $request->send();
+                    if ($response->isOk) {
+                        $result = $response->data;
+                        Yii::$app->cache->set($user, $result);
+                    }
+                });
+            }
         }
-      }
-      $node_count = count($nodes);
-      $curl_arr = array();
-      $master = curl_multi_init();
-      for($i = 0; $i < $node_count; $i++) {
-          $url =$nodes[$i];
-          $curl_arr[$i] = curl_init($url);
-          curl_setopt($curl_arr[$i], CURLOPT_RETURNTRANSFER, true);
-          curl_setopt($curl_arr[$i], CURLOPT_USERAGENT, 'curl');
-          if (Yii::$app->request->get('token')) {
-            curl_setopt($curl_arr[$i], CURLOPT_HTTPHEADER, [
-                'Authorization: token ' . Yii::$app->request->get('token'),
-            ]);
-          }
-          curl_multi_add_handle($master, $curl_arr[$i]);
-      }
+        Yii::$app->async->wait();
+    }
 
-      for (;;) {
-        curl_multi_exec($master,$running);
-        if ($running < 1) break;
-        curl_multi_select($master, 1);
-      }
-
-      for($i = 0; $i < $node_count; $i++) {
-          $results[] = curl_multi_getcontent  ( $curl_arr[$i]  );
-      }
-      foreach ($results as $result) {
-        if ($result[0] == '[') {
-          $accRepos = json_decode($result);
-          foreach ($accRepos as $repo) {
-            $repos[] = [ 'html_url' => $repo->html_url, 'name' => $repo->name, 'updated_at' => $repo->updated_at];
-          }
+    public function getFirst10CachedRepos($userListStr)
+    {
+        $users = explode(' ', $userListStr);
+        $info = [];
+        foreach ($users as $user) {
+            $repos = Yii::$app->cache->get($user);
+            if (!empty($repos)) {
+                foreach ($repos as $repo) {
+                    $info[] = [ 'html_url' => $repo['html_url'], 'name' => $repo['name'], 'updated_at' => $repo['updated_at']];
+                }
+            }
         }
-      }
-      usort($repos, fn($a, $b) => strcmp($b['updated_at'], $a['updated_at']));
-      $repos = array_slice($repos, 0, 10);
-      Yii::$app->cache->set($userListStr, $repos, 10 * 60);
+        usort($info, fn($a, $b) => strcmp($b['updated_at'], $a['updated_at']));
+        $info = array_slice($info, 0, 10);
+        return $info;
     }
 
     public function actionIndex() {
-      if (Yii::$app->request->post('authorize')) {
-        return $this->redirect(Yii::$app->params['github_api_oauth_authorize_url'] . '?client_id=' . Yii::$app->params['github_api_client_id']);
-      }
-      $githubOAthCode = Yii::$app->request->get('code');
-      if ($githubOAthCode) {
-        return $this->redirectAfterGithubOAuthorization($githubOAthCode);
-      }
+        if (Yii::$app->request->post('authorize')) {
+            return $this->redirect(Yii::$app->params['github_api_oauth_authorize_url'] . '?client_id=' . Yii::$app->params['github_api_client_id']);
+        }
+        $githubOAthCode = Yii::$app->request->get('code');
+        if ($githubOAthCode) {
+            return $this->redirectAfterGithubOAuthorization($githubOAthCode);
+        }
 
-      $userListFromLink = $this->getUserListFromLink(Yii::$app->request->post('userListLink'));
-      $userListFromForm = explode(' ', '' . Yii::$app->request->post('userList'));
+        $userListLink = Yii::$app->request->post('userListLink') ?? '';
+        $userList = Yii::$app->request->post('userList') ?? '';
 
-      $userListStr = trim(implode(' ', array_unique(array_merge($userListFromForm, $userListFromLink))));
+        $userListFromLink = empty($userListLink) ? [] : $this->getUserListFromLink($userListLink);
 
-      $refresh = Yii::$app->request->post('refresh');
+        if (empty($userList)) {
+            $userList = Yii::$app->cache->get('userList') ?? '';
+        } else {
+            Yii::$app->cache->set('userList', $userList);
+        }
 
-      if ($refresh && !Yii::$app->cache->get($userListStr)) {
-        $this->downloadReposInfo($userListStr);
-      }
+        $userListFromForm = explode(' ', $userList);
+        $userListStr = trim(implode(' ', array_unique(array_filter(array_merge($userListFromForm, $userListFromLink)))));
 
-      $repos = Yii::$app->cache->get($userListStr);
-      if (!$repos) $repos = [];
+        Yii::$app->cache->set('userList', $userListStr);
 
-      return $this->render('index', [
-          'userList' => $userListStr,
-          'repos' => $repos,
-          'token' => Yii::$app->request->get('token'),
-          'refresh' => $refresh
-        ]
-      );
+        $refresh = Yii::$app->request->post('refresh');
+
+        $token = Yii::$app->request->get('token');
+
+        if ($refresh) {
+            $this->downloadReposInfo($userListStr, $token);
+        }
+
+        return $this->render('index', [
+            'userList' => $userListStr,
+            'repos' => $this->getFirst10CachedRepos($userListStr),
+            'token' => $token,
+            'refresh' => $refresh
+        ]);
+    }
+
+    public function actionTest()
+    {
+        Yii::$app->async->run(function() {
+           return 123;
+        });
+
+        $some = Yii::$app->async->wait();
+
+        return $some[0];
     }
 }

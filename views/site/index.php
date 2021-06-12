@@ -1,6 +1,10 @@
 <?php
 
 /* @var $this yii\web\View */
+/* @var $userList string */
+/* @var $refresh int */
+/* @var $repos array */
+/* @var $token string */
 
 use yii\helpers\Html;
 
@@ -11,13 +15,12 @@ $this->title = 'My Yii Application';
     <div class="body-content">
 
         <div class="row">
-            <div class="col-lg-4">
+            <div class="col-lg-4" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis">
                 <h2>Enter link for user list</h2>
-                e.g. &laquo;https://raw.githubusercontent.com/fredeom/i2crm_test/master/users.txt&raquo;
+                e.g. <a href="#" class="copy-to-clipboard-by-click" data-target="#samplelink">copy following</a>: &laquo;<span id="samplelink">https://raw.githubusercontent.com/fredeom/i2crm_test/master/users.txt</span>&raquo;
                 <p>
                   <?= Html::beginForm() ?>
-                  <?= Html::input('text', 'userListLink', '', ['placeholder' => "", 'style' => 'margin-top: 5px;']) ?>
-                  <?= Html::input('hidden', 'userList', $userList); ?>
+                  <?= Html::input('text', 'userListLink', '', ['style' => 'margin-top: 5px;']) ?>
                   <?= Html::submitButton('Add', ['class' => 'btn btn-primary']); ?>
                   <?= Html::endForm(); ?>
                 </p>
@@ -32,10 +35,9 @@ $this->title = 'My Yii Application';
                 </p>
             </div>
             <div class="col-lg-8">
-              <p style="margin-top:1.5em;">
+              <p style="margin-top: 1.5em;">
                 <?= Html::beginForm() ?>
                 <?= Html::input('hidden', 'refresh', 1); ?>
-                <?= Html::input('hidden', 'userList', $userList); ?>
                 <?= Html::submitButton('Refresh Table', ['class' => 'btn btn-primary']); ?> After click automatic refresh happens every 20 minutes
                 <?= Html::endForm(); ?>
                 <script>
@@ -46,18 +48,14 @@ $this->title = 'My Yii Application';
                 </script>
               </p>
               <p>
-                <?php
-                  if ($token) {
-                    echo 'Now you authorized and github api limits are higher';
-                  } else {
-                ?>
-                <?= Html::beginForm() ?>
-                <?= Html::input('hidden', 'authorize', 1); ?>
-                <?= Html::submitButton('Authorize', ['class' => 'btn btn-danger']); ?> Authorize to overcome github api limits
-                <?= Html::endForm(); ?>
-                <?php
-                  }
-                ?>
+                <?php if ($token): ?>
+                    Now you authorized and github api limits are higher
+                <?php else: ?>
+                    <?= Html::beginForm() ?>
+                    <?= Html::input('hidden', 'authorize', 1); ?>
+                    <?= Html::submitButton('Authorize', ['class' => 'btn btn-danger']); ?> Authorize to overcome github api limits
+                    <?= Html::endForm(); ?>
+                <?php endif; ?>
               </p>
               <p>
                 <table border="1" style="width:100%; table-layout: fixed;">
@@ -69,15 +67,13 @@ $this->title = 'My Yii Application';
                     </tr>
                   </thead>
                   <tbody>
-                    <?php
-                      foreach ($repos as $repo) {
-                        echo '<tr>
-                                <td>' . \yii\helpers\Html::encode($repo['name']) . '</td>
-                                <td>' . \yii\helpers\Html::encode($repo['updated_at']). '</td>
-                                <td><a href="' . \yii\helpers\Html::encode($repo['html_url']) . '">' . \yii\helpers\Html::encode($repo['html_url']) . '</a></td>
-                              </tr>';
-                      }
-                    ?>
+                    <?php foreach ($repos as $repo): ?>
+                        <tr>
+                            <td><?= Html::encode($repo['name']) ?></td>
+                            <td><?= Html::encode($repo['updated_at']) ?></td>
+                            <td><a href="<?= Html::encode($repo['html_url']) ?>"><?= Html::encode($repo['html_url']) ?></a></td>
+                        </tr>
+                    <?php endforeach; ?>
                   </tbody>
                 </table>
               </p>
